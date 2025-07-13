@@ -2,6 +2,7 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using PdfSharp.Pdf;
 using PdfSharp.Drawing;
+using PdfSharp.Pdf.IO;
 
 namespace ImageAndPdfTool
 {
@@ -69,94 +70,115 @@ namespace ImageAndPdfTool
             }
             Directory.CreateDirectory(processedFolder);
 
-            var imageFiles = Directory.GetFiles(selectedFolder, "*.*")
-                .Where(f => f.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) ||
-                            f.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase) ||
-                            f.EndsWith(".png", StringComparison.OrdinalIgnoreCase) ||
-                            f.EndsWith(".bmp", StringComparison.OrdinalIgnoreCase))
+            var allFiles = Directory.GetFiles(selectedFolder, "*.*", SearchOption.TopDirectoryOnly)
+                .Where(f =>
+                    f.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) ||
+                    f.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase) ||
+                    f.EndsWith(".png", StringComparison.OrdinalIgnoreCase) ||
+                    f.EndsWith(".bmp", StringComparison.OrdinalIgnoreCase) ||
+                    f.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
                 .OrderBy(f => f, StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
-            var a4Images = new List<string>();
-
-            // Set progress bar maximum value
             progressBar.Minimum = 0;
-            progressBar.Maximum = imageFiles.Count;
+            progressBar.Maximum = allFiles.Count;
             progressBar.Value = 0;
 
+            var pdf = new PdfDocument();
             int processedCount = 0;
-            foreach (var file in imageFiles)
+
+            foreach (var file in allFiles)
             {
+                string ext = Path.GetExtension(file).ToLowerInvariant();
                 try
                 {
-                    using var img = Image.FromFile(file);
-
-                    if (img.Width > img.Height)
+                    if (ext == ".pdf")
                     {
-                        // Split landscape image into two A4 images
-                        int halfWidth = img.Width / 2;
-                        using (var part1 = new Bitmap(halfWidth, img.Height))
-                        using (var g1 = Graphics.FromImage(part1))
-                        {
-                            g1.DrawImage(img, new Rectangle(0, 0, halfWidth, img.Height),
-                                new Rectangle(0, 0, halfWidth, img.Height), GraphicsUnit.Pixel);
+                        var destPdfPath = Path.Combine(processedFolder, Path.GetFileName(file));
+                        File.Copy(file, destPdfPath, true);
 
-                            using var a4Part1 = ResizeToA4(part1);
-                            var part1Path = Path.Combine(processedFolder, $"{Path.GetFileNameWithoutExtension(file)}_(1){Path.GetExtension(file)}");
-                            a4Part1.Save(part1Path, ImageFormat.Jpeg);
-                            a4Images.Add(part1Path);
-                        }
-                        using (var part2 = new Bitmap(img.Width - halfWidth, img.Height))
-                        using (var g2 = Graphics.FromImage(part2))
+                        using var inputDoc = PdfReader.Open(file, PdfDocumentOpenMode.Import);
+                        for (int idx = 0; idx < inputDoc.PageCount; idx++)
                         {
-                            g2.DrawImage(img, new Rectangle(0, 0, img.Width - halfWidth, img.Height),
-                                new Rectangle(halfWidth, 0, img.Width - halfWidth, img.Height), GraphicsUnit.Pixel);
-
-                            using var a4Part2 = ResizeToA4(part2);
-                            var part2Path = Path.Combine(processedFolder, $"{Path.GetFileNameWithoutExtension(file)}_(2){Path.GetExtension(file)}");
-                            a4Part2.Save(part2Path, ImageFormat.Jpeg);
-                            a4Images.Add(part2Path);
+                            pdf.AddPage(inputDoc.Pages[idx]);
                         }
                     }
                     else
                     {
-                        // Portrait image: resize to A4 and save
-                        using var a4Img = ResizeToA4(img);
-                        var destPath = Path.Combine(processedFolder, Path.GetFileName(file));
-                        a4Img.Save(destPath, ImageFormat.Jpeg);
-                        a4Images.Add(destPath);
+                        using var img = Image.FromFile(file);
+                        if (img.Width > img.Height)
+                        {
+                            // Split landscape image into two A4 images
+                            int halfWidth = img.Width / 2;
+                            using (var part1 = new Bitmap(halfWidth, img.Height))
+                            using (var g1 = Graphics.FromImage(part1))
+                            {
+                                g1.DrawImage(img, new Rectangle(0, 0, halfWidth, img.Height),
+                                    new Rectangle(0, 0, halfWidth, img.Height), GraphicsUnit.Pixel);
+
+                                using var a4Part1 = ResizeToA4(part1);
+                                var part1Path = Path.Combine(processedFolder, $"{Path.GetFileNameWithoutExtension(file)}_(1){Path.GetExtension(file)}");
+                                a4Part1.Save(part1Path, ImageFormat.Jpeg);
+
+                                using var ximg = XImage.FromFile(part1Path);
+                                var page = pdf.AddPage();
+                                page.Width = XUnit.FromPoint(595);
+                                page.Height = XUnit.FromPoint(842);
+                                using var gfx = XGraphics.FromPdfPage(page);
+                                gfx.DrawImage(ximg, 0, 0, page.Width.Point, page.Height.Point);
+                            }
+                            using (var part2 = new Bitmap(img.Width - halfWidth, img.Height))
+                            using (var g2 = Graphics.FromImage(part2))
+                            {
+                                g2.DrawImage(img, new Rectangle(0, 0, img.Width - halfWidth, img.Height),
+                                    new Rectangle(halfWidth, 0, img.Width - halfWidth, img.Height), GraphicsUnit.Pixel);
+
+                                using var a4Part2 = ResizeToA4(part2);
+                                var part2Path = Path.Combine(processedFolder, $"{Path.GetFileNameWithoutExtension(file)}_(2){Path.GetExtension(file)}");
+                                a4Part2.Save(part2Path, ImageFormat.Jpeg);
+
+                                using var ximg = XImage.FromFile(part2Path);
+                                var page = pdf.AddPage();
+                                page.Width = XUnit.FromPoint(595);
+                                page.Height = XUnit.FromPoint(842);
+                                using var gfx = XGraphics.FromPdfPage(page);
+                                gfx.DrawImage(ximg, 0, 0, page.Width.Point, page.Height.Point);
+                            }
+                        }
+                        else
+                        {
+                            // Portrait image: resize to A4 and save
+                            using var a4Img = ResizeToA4(img);
+                            var destPath = Path.Combine(processedFolder, Path.GetFileName(file));
+                            a4Img.Save(destPath, ImageFormat.Jpeg);
+
+                            using var ximg = XImage.FromFile(destPath);
+                            var page = pdf.AddPage();
+                            page.Width = XUnit.FromPoint(595);
+                            page.Height = XUnit.FromPoint(842);
+                            using var gfx = XGraphics.FromPdfPage(page);
+                            gfx.DrawImage(ximg, 0, 0, page.Width.Point, page.Height.Point);
+                        }
                     }
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show($"Error processing image: {file}\n{ex.Message}");
+                    MessageBox.Show($"Error processing file: {file}\n{ex.Message}");
                 }
 
                 processedCount++;
                 progressBar.Value = processedCount;
-                Application.DoEvents(); // Refresh UI
+                Application.DoEvents();
             }
 
-            var sortedA4Images = a4Images.OrderBy(f => f, StringComparer.OrdinalIgnoreCase).ToList();
-
-            if (sortedA4Images.Count == 0)
+            if (pdf.PageCount == 0)
             {
-                MessageBox.Show("No images processed. PDF not generated.");
-                lblStatus.Text = "No images processed.";
+                MessageBox.Show("No images or PDFs processed. PDF not generated.");
+                lblStatus.Text = "No images or PDFs processed.";
                 progressBar.Value = 0;
                 return;
             }
 
-            var pdf = new PdfDocument();
-            foreach (var imgPath in sortedA4Images)
-            {
-                using var img = XImage.FromFile(imgPath);
-                var page = pdf.AddPage();
-                page.Width = XUnit.FromPoint(595);   // A4 width in points (72 dpi)
-                page.Height = XUnit.FromPoint(842);  // A4 height in points (72 dpi)
-                using var gfx = XGraphics.FromPdfPage(page);
-                gfx.DrawImage(img, 0, 0, page.Width.Point, page.Height.Point);
-            }
             var pdfPath = Path.Combine(processedFolder, "MergedA4Images.pdf");
             pdf.Save(pdfPath);
 
