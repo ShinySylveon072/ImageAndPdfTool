@@ -2,7 +2,7 @@
 
 ## Overview
 
-This Windows Forms tool allows you to batch process images in a selected folder, automatically splitting landscape (A3-like) images into two A4-sized images, resizing all images to standard A4 dimensions, and merging them into a single PDF file. The tool is designed for .NET 8 and uses PDFsharp for PDF generation.
+This Windows Forms tool allows you to batch process images or PDFs in a selected folder, automatically splitting landscape (A3-like) images into two A4-sized images, resizing all images to standard A4 dimensions, and merging them into a single PDF file. The tool is designed for .NET 8 and uses PDFsharp for PDF generation.
 
 ## Features
 
@@ -40,7 +40,3 @@ This Windows Forms tool allows you to batch process images in a selected folder,
 - Only images with extensions `.jpg`, `.jpeg`, `.png`, `.bmp` are processed.
 - Landscape images are split; portrait images are only resized.
 - The application window is fixed size and cannot be resized.
-
-## License
-
-This project is provided as-is for educational and personal use.
